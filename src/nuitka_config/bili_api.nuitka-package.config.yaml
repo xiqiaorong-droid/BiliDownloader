@@ -5,6 +5,6 @@
 ---
 - module-name: 'Lib.bili_api'
   data-files:
-    dest_path: 'Lib/bili_api'
-    dirs:
-      - 'utils/data'
+    - dest_path: 'Lib/bili_api'
+      dirs:
+        - 'utils/data'
