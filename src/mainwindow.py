@@ -14,6 +14,9 @@ from utils import init, configUtils
 class MainWindow(QtWidgets.QMainWindow):
     def __init__(self, parent=None):
         super(MainWindow, self).__init__(parent)
+        
+        # 新增：标记当前是否正在安装更新
+        self._is_updating = False
 
         # Init
         if init.init():
@@ -58,10 +61,11 @@ class MainWindow(QtWidgets.QMainWindow):
     def find_update(self, new: str, info: str):
         self.ui.centralwidget.setEnabled(False)
         dialog = DialogUpdateInfo(new, info, self)
-        resault = dialog.exec()
-        if resault == QtWidgets.QDialog.DialogCode.Rejected:
+        result = dialog.exec()
+        if result == QtWidgets.QDialog.DialogCode.Rejected:
             self.ui.centralwidget.setEnabled(True)
             return
+
         dialog = DialogDownloadUpdate(self)
         self.download_thread = UpdateDownloader(self)
         self.download_path = configUtils.getUserData(
@@ -94,16 +98,33 @@ class MainWindow(QtWidgets.QMainWindow):
 
     @QtCore.Slot()
     def download_finished(self):
-        self.disconnect(self.download_thread)
-        del self.download_thread
+        if hasattr(self, 'download_thread') and self.download_thread:
+            self.disconnect(self.download_thread)
+            del self.download_thread
 
     @QtCore.Slot(str)
     def download_install(self, file: str):
+        # 1. 标记正在更新，防止 closeEvent 触发设置保存
+        self._is_updating = True
+        
+        # 2. 安全地停止并等待下载线程结束
+        if hasattr(self, 'download_thread') and self.download_thread:
+            self.download_thread.stop()
+            self.download_thread.quit()
+            self.download_thread.wait()
+            
+        # 3. 关闭当前窗口
         self.close()
-        subprocess.call(
-            f"cmd /c start \"\" \"{file}\"",
-            creationflags=subprocess.CREATE_NO_WINDOW
-        )
+        
+        # 4. 启动安装程序
+        try:
+            subprocess.Popen(
+                [file],
+                shell=True,
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+        except Exception as e:
+            print(f"启动安装程序失败: {e}")
 
     @QtCore.Slot(int)
     def on_tab_changes(self, index):
@@ -115,5 +136,11 @@ class MainWindow(QtWidgets.QMainWindow):
         self.ui.tabWidget.setCurrentIndex(index)
 
     def closeEvent(self, event):
+        # 如果正在安装更新，直接退出，不保存设置
+        if self._is_updating:
+            event.accept()
+            return
+            
+        # 正常关闭时保存设置
         self.tabs[2].save_settings()
         event.accept()
